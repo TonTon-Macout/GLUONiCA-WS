@@ -3,21 +3,22 @@
 
 #define VERSION "GLUONiCA_WS_1.0 (" __DATE__ ")"
 
-#include <credentials.h> 
-#ifndef USE_CREDENTIALS 
-#define SERIAL_NUMBER "PUBLIC"
-#define NAME "GLUONiCA WS"
-#define NETWORK_NAME "GLUONiCA_WS"
-#define API_OPENWEATHERMAP "апи-ключ" // пока или всегда в разработке 
-#define WIFI_SSID "MY_WIFI_NAME"
-#define WIFI_PASSS "PASSWORD"
-#define RESERV_WIFI_SSID "RESERV_WIFI_NAME"
-#define RESERV_WIFI_PASSS "PASSWORD"
-#define AP_PASSS "gluonpass" // пароль точки доступа
-#define MQTT_PASS "pass_mqtt"
-#define MQTT_USER "login_mqtt"
-#define WEATHER_CITY "МОСКВА"
-#define SERIAL_SPEED 115200
+#if __has_include("credentials.h")
+  #include "credentials.h"
+#else
+    #define SERIAL_NUMBER "PUBLIC"
+    #define NAME "GLUONiCA WS"
+    #define NETWORK_NAME "GLUONiCA_WS"
+    #define API_OPENWEATHERMAP "апи-ключ" // пока или всегда в разработке 
+    #define WIFI_SSID "MY_WIFI_NAME"
+    #define WIFI_PASSS "PASSWORD"
+    #define RESERV_WIFI_SSID "RESERV_WIFI_NAME"
+    #define RESERV_WIFI_PASSS "PASSWORD"
+    #define AP_PASSS "gluonpass" // пароль точки доступа
+    #define MQTT_PASS "pass_mqtt"
+    #define MQTT_USER "login_mqtt"
+    #define WEATHER_CITY "МОСКВА"
+    #define SERIAL_SPEED 115200
 #endif
 
 #define DEFAULT_DEBUG Serial  // сериал порт для дебага по умолчанию
