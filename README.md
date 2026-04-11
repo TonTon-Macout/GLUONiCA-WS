@@ -5,4 +5,4 @@
 
 > Mini D1 ESP32 : [ссылка](https://aliexpress.ru/item/32858054775.htm)
 
-> Датчик газа SCD40/SCD41 : [ссылка](https://aliexpress.ru/item/1005007944114474.html) 
+> Датчик SCD40 : [ссылка](https://aliexpress.ru/item/1005007944114474.html) 
