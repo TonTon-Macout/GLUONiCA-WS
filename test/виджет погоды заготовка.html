@@ -1,0 +1,242 @@
+<html lang="ru"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather Widget</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #0a0a0a;
+      color: #fff;
+      padding: 15px;
+    }
+
+    .weather-container {
+      max-width: 1280px;
+      margin: 0 auto;
+      background: #111;
+      border: 3px solid #333;
+      padding: 12px;
+    }
+
+    /* ====================== ВЕРХНЯЯ ПОЛОСА ====================== */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #1a1a1a;
+      border-bottom: 2px solid #333;
+      margin-bottom: 12px;
+      font-size: 18px;
+    }
+
+    /* ====================== ОСНОВНАЯ ЧАСТЬ ====================== */
+    .top-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 15px;
+    }
+
+    /* Левая карточка — текущая погода (зелёная) */
+    .current-main {
+      flex: 1;
+      border: 2px solid #0f0;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 220px;
+    }
+
+    .weather-icon {
+      font-size: 92px;
+      margin-bottom: 10px;
+    }
+
+    /* Синий блок — температура */
+    .current-temp-big {
+      flex: 1.35;
+      border: 2px solid #00aaff;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .temp-main {
+      display: flex;
+      align-items: center;
+      gap: 25px;
+      flex: 1;
+    }
+
+    .big-temp {
+      font-size: 78px;
+      font-weight: bold;
+      line-height: 1;
+    }
+
+    .day-night {
+      font-size: 19px;
+      line-height: 1.4;
+    }
+
+    /* Правая колонка — доп. информация */
+    .info-column {
+      width: 260px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .info-box {
+      border: 2px solid #c00;
+      padding: 11px 14px;
+      font-size: 15.5px;
+      background: #1a1a1a;
+    }
+
+    /* ====================== НИЖНЯЯ СЕТКА ====================== */
+    .forecast-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 10px;
+    }
+
+    .forecast-day {
+      border: 2px solid #0f0;
+      padding: 12px 8px;
+      text-align: center;
+      min-height: 138px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+
+    .forecast-icon {
+      font-size: 42px;
+      margin: 6px 0;
+    }
+
+    .forecast-day-name {
+      font-size: 14.5px;
+      opacity: 0.9;
+    }
+
+    .forecast-temp {
+      font-size: 23px;
+      font-weight: bold;
+    }
+
+    .forecast-label {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      font-size: 11px;
+      color: #00ccff;
+      background: rgba(0,0,0,0.6);
+      padding: 2px 7px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="weather-container">
+
+    <!-- Верхняя полоса: Город | Время -->
+    <div class="header-bar">
+      <div><strong>Москва</strong></div>
+      <div>28 марта 2026 • 13:45</div>
+    </div>
+
+    <!-- Основная верхняя секция -->
+    <div class="top-row">
+
+      <!-- Левая часть — только иконка в зелёном квадрате -->
+      <div class="current-main">
+        <div class="weather-icon">⛅</div>
+      </div>
+
+      <!-- Синий блок — большая температура -->
+      <div class="current-temp-big">
+        <div class="temp-main">
+          
+          <div>
+            <div class="big-temp">+19°</div>
+            
+          </div>
+        </div>
+
+        <div class="day-night" style="margin-top: auto;">
+          Днём: <strong>+22°</strong><br>
+          Ночью: <strong>+11°</strong>
+        </div>
+      </div>
+
+      <!-- Правая колонка с информацией -->
+      <div class="info-column">
+        <div class="info-box">Ветер: 4 м/с, ЮЗ</div>
+        <div class="info-box">Давление: 1018 гПа</div>
+        <div class="info-box">УФ-индекс: 4 (умеренный)</div>
+        <div class="info-box">Восход: 06:18</div>
+        <div class="info-box">Закат: 20:39</div>
+      </div>
+
+    </div>
+
+    <!-- Нижняя сетка прогноза на 7 дней -->
+    <div class="forecast-grid">
+
+      <div class="forecast-day">
+        <div class="forecast-day-name">Пн</div>
+        <div class="forecast-icon">☀️</div>
+        <div class="forecast-temp">+21°</div>
+      </div>
+
+      <div class="forecast-day">
+        <div class="forecast-day-name">Вт</div>
+        <div class="forecast-icon">⛅</div>
+        <div class="forecast-temp">+19°</div>
+      </div>
+
+      <div class="forecast-day">
+        <div class="forecast-day-name">Ср</div>
+        <div class="forecast-icon">🌧️</div>
+        <div class="forecast-temp">+15°</div>
+      </div>
+
+      <div class="forecast-day">
+        <div class="forecast-day-name">Чт</div>
+        <div class="forecast-icon">☁️</div>
+        <div class="forecast-temp">+17°</div>
+      </div>
+
+      <div class="forecast-day">
+        <div class="forecast-day-name">Пт</div>
+        <div class="forecast-icon">⛅</div>
+        <div class="forecast-temp">+20°</div>
+      </div>
+
+      <div class="forecast-day">
+        <div class="forecast-day-name">Сб</div>
+        <div class="forecast-icon">🌥️</div>
+        <div class="forecast-temp">+18°</div>
+      </div>
+
+      <div class="forecast-day">
+        <div class="forecast-day-name">Вс</div>
+        <div class="forecast-icon">🌦️</div>
+        <div class="forecast-temp">+14°</div>
+        <span class="forecast-label">forecast_temp</span>
+      </div>
+
+    </div>
+
+      
+  </div>
+
+
+</body></html>
