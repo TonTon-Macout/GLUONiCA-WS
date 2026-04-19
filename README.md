@@ -2,6 +2,8 @@
 # GLUONiCA WS
 Погодная станция
 
+> основано на [проекте](https://github.com/G6EJD/ESP32-e-Paper-Weather-Display) 
+
 <img width="400" height="280" alt="gw" src="https://github.com/user-attachments/assets/4257eef1-887f-466b-b7e7-0f9c3f2e6321" />
 <img width="400" height="740" alt="Снимок экрана 2026-04-19 201805" src="https://github.com/user-attachments/assets/1c6f8854-a061-4bdc-8a09-85a694c140af" />
 
