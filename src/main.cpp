@@ -18,6 +18,7 @@
     #define MQTT_PASS "pass_mqtt"
     #define MQTT_USER "login_mqtt"
     #define WEATHER_CITY "МОСКВА"
+    #define BUTTON_PIN 25
     #define SERIAL_SPEED 115200
 #endif
 
@@ -3025,7 +3026,7 @@ class BUTTON {
     }
 };
 
-BUTTON knp_boot(PIN_btn_PULLUP, 25);  //
+BUTTON knp_boot(PIN_btn_PULLUP, BUTTON_PIN);  //
 
 class Gluonica {
    public:
