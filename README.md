@@ -1,5 +1,5 @@
 
-# GLUONiCA-WS
+# GLUONiCA WS
 Погодная станция
 
 <img width="400" height="280" alt="gw" src="https://github.com/user-attachments/assets/4257eef1-887f-466b-b7e7-0f9c3f2e6321" />
