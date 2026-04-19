@@ -5381,7 +5381,7 @@ void build(sets::Builder& b) {
                 b.reload();
             }
         }
-
+/*
         b.HTML("", "<span class=\"HR\"></span>");
         if (b.Number("макс. температура процессора", "Порог температуры для уведомления", &settings.alert_cpu_temp, 0, 255)) {
         }
@@ -5391,6 +5391,7 @@ void build(sets::Builder& b) {
             // settings.mode = MODE_OVERHEATING_ANIM;
             b.reload();
         }
+*/
     }
     ///////////////////////////////////////////////////////
 
