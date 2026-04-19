@@ -4354,7 +4354,7 @@ const char welcome_message[] PROGMEM = R"rawliteral(
         <span class="hello-message">
             Я погодная станиция GLUONiCA!<br>
             Для продолжения требуется первоначальная настройка.<br>
-            Тут есть инструкция: 🌐 <a href="https://github.com/TonTon-Macout/GLUONiCA/blob/main/help/first_start.md" target="_blank" rel="noopener noreferrer">github.com</a>
+            Тут есть инструкция: 🌐 <a href="https://github.com/TonTon-Macout/GLUONiCA-WS/blob/main/help/first_start.md" target="_blank" rel="noopener noreferrer">github.com</a>
         </span>
         <br>
     </div>
