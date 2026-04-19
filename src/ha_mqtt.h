@@ -61,7 +61,7 @@ class HA_MQTT {
    public:
     HA_MQTT(WiFiClient& client) : mqtt(client) {
         wifi = &client;
-        wifi->setTimeout(_wifi_timeout);
+        //wifi->setTimeout(_wifi_timeout);
         sensors.reserve(10);
         
     }
@@ -180,10 +180,10 @@ class HA_MQTT {
         mqtt.setKeepAlive(_keepalive);
     }
     // миллисекунд
-    void setWiFiTimeout(uint16_t timeout) {
-        _wifi_timeout = timeout;
-        wifi->setTimeout(_wifi_timeout);
-    }
+    //void setWiFiTimeout(uint16_t timeout) {
+    //    _wifi_timeout = timeout;
+    //    wifi->setTimeout(_wifi_timeout);
+    //}
     // миллисекунд
     void setReconnectInterval(unsigned long interval){
         reconnectInterval = interval;

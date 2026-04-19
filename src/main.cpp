@@ -24,11 +24,7 @@
 
 #define DEFAULT_DEBUG Serial  // сериал порт для дебага по умолчанию
 
-#ifdef ESP8266
-#include <ESP8266WiFi.h>
-#else
 #include <WiFi.h>
-#endif
 // если вафля подключена
 #define WIFI WiFi.status() == WL_CONNECTED
 #define IF_WIFI if (WIFI)
