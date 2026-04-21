@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>    
-   
+#include <time.h>   
 
 extern const int max_readings;
 extern const int max_dayly_readings;
@@ -720,6 +720,52 @@ String ConvertUnixTime(int unix_time) {
   
   
   return output;
+}
+
+
+
+// 13:22:33
+String ConvertTime_HMS(time_t unix_time) {
+    struct tm timeinfo;
+    gmtime_r(&unix_time, &timeinfo);
+
+    char buffer[10];
+    strftime(buffer, sizeof(buffer), "%H:%M:%S", &timeinfo);
+
+    return String(buffer);
+}
+
+// 21 АПРЕЛЯ 2026
+String ConvertDate_Full(time_t unix_time) {
+    struct tm timeinfo;
+    gmtime_r(&unix_time, &timeinfo);
+
+    const char* months[] = {
+        "ЯНВАРЯ", "ФЕВРАЛЯ", "МАРТА", "АПРЕЛЯ",
+        "МАЯ", "ИЮНЯ", "ИЮЛЯ", "АВГУСТА",
+        "СЕНТЯБРЯ", "ОКТЯБРЯ", "НОЯБРЯ", "ДЕКАБРЯ"
+    };
+
+    char buffer[40];
+    snprintf(buffer, sizeof(buffer), "%d %s %d",
+             timeinfo.tm_mday,
+             months[timeinfo.tm_mon],
+             timeinfo.tm_year + 1900);
+
+    return String(buffer);
+}
+
+// ВТОРНИК
+String ConvertWeekDay(time_t unix_time) {
+    struct tm timeinfo;
+    gmtime_r(&unix_time, &timeinfo);
+
+    const char* days[] = {
+        "ВОСКРЕСЕНЬЕ", "ПОНЕДЕЛЬНИК", "ВТОРНИК",
+        "СРЕДА", "ЧЕТВЕРГ", "ПЯТНИЦА", "СУББОТА"
+    };
+
+    return String(days[timeinfo.tm_wday]);
 }
 
 float mm_to_inches(float value_mm){

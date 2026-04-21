@@ -150,7 +150,11 @@ struct __attribute__((packed)) SETTINGS {
     char mqtt_topic_msg[61] = NETWORK_NAME "_" SERIAL_NUMBER " - connected";
 
     // TIME
-    uint8_t internet_time = 0;  // 0 - время из погоды, 1 - из интернета, 2 - rtc
+    ///@param 0 - время из погоды
+    ///@param 1 - из интернета
+    ///@param 2 - rtc
+    ///@param 3 - из погоды без хода часов (время получения погоды)
+    uint8_t internet_time = 3;  
     char ntp_host[30] = "pool.ntp.org";
     int timeZone = 3;
     char Timezone[30] = "MSK-3";  // Choose your time zone from: https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv
@@ -292,7 +296,7 @@ int SleepTime = 24;  // Sleep after (23+1) 00:00 to save battery power
 void count();
 extern "C" uint8_t temprature_sens_read();
 
-;
+// прототипы
 void BeginSleep();
 void updt_time();
 void appendDebugToLCD(const __FlashStringHelper* msg, bool new_line = false);
@@ -307,6 +311,7 @@ void appendDebugToLCD(const su::Text& msg, bool new_line = false);
 void listFiles(const char* dirname, uint8_t level = 0);
 bool sendMqttData();
 bool if_button();
+void printOta();
 // bool mqtt_init();
 
 // cимволы для цветного вывода
@@ -994,6 +999,8 @@ void updt_time() {
     month = _time.month;
     year = _time.year;
     weekDay = _time.weekDay;
+    unix = _time.getUnix();
+
     // DEBUG(SIMBOL_CUSTOM, "weekDay: ",  weekDay);
     // DEBUG(SIMBOL_CUSTOM, "weekDay: ",  weekday_D[weekDay]);
     // DEBUG(SIMBOL_CUSTOM, "weekDay: ",  weekday_D_short[weekDay]);
@@ -1004,12 +1011,17 @@ void updt_time() {
     // DEBUG(SIMBOL_CUSTOM, "month: ",  month_M_short[month]);
     // DEBUG(SIMBOL_CUSTOM, "----------------------------");
 
-    unix = _time.getUnix();
+    if(settings.internet_time == 3) {
+       date_str = ConvertWeekDay(WxConditions[0].Dt) + " " + ConvertDate_Full(WxConditions[0].Dt);
+       time_str = ConvertTime_HMS(WxConditions[0].Dt);
+    }
+    else {
+        sprintf(day_output, "%s  %02u %s %04u", weekday_D[weekDay], day, month_M[month], year);
+        date_str = day_output;
+        time_str = NTP.timeToString();
+    }
 
-    sprintf(day_output, "%s  %02u %s %04u", weekday_D[weekDay], day, month_M[month], year);
 
-    date_str = day_output;
-    time_str = NTP.timeToString();
     // DEBUG(SIMBOL_INFO, "Time source: ", (_time.year != 1970 ? "NTP" : "RTC"));
     // DEBUG(SIMBOL_INFO, "Time: ", _time.timeToString() + " " + _time.dateToString());
 
@@ -2280,12 +2292,13 @@ class Status {
                 break;
             case 2: {
                 bool ok = getOpenMeteoWeather();
-                if (settings.internet_time == 0) {
+                if (settings.internet_time == 0 || settings.internet_time == 3) {
                     NTP.end();
                     uint32_t _unix = WxConditions[0].Dt;
                     NTP.setGMT(0);
                     NTP.sync(_unix);
                 }
+
 
                 updateSensors();
                 return ok;
@@ -2590,6 +2603,7 @@ void ota_init() {
         // led.on();
         DEBUG(SIMBOL_ERR, "==============================");
         DEBUG(SIMBOL_WAR, "==== OTA  UPDATE  STARTED ====");
+        printOta();
         // printOta(0);
     });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
@@ -2652,7 +2666,13 @@ void ntp_init() {
                 DEBUG(SIMBOL_INFO, "[NTP] Используем время с модуля RTC");
             }
             break;
-
+        case 3: {  // местное, без хода часов (время получения погоды)
+            NTP.end();
+            uint32_t _unix = WxConditions[0].Dt;
+            NTP.setGMT(0);
+            NTP.sync(_unix);
+            DEBUG(SIMBOL_INFO, "[NTP] Используем местное время (полученное с сервера погоды, без хода часов)");
+        } break;    
         default:
             break;
     }
@@ -2773,7 +2793,7 @@ bool mqtt_init(bool sleep = false) {
 }
 bool sendMqttData() {
     if (!settings.mqtt || !(WIFI)) return false;
-    DEBUG(SIMBOL_INFO, "[MQTT] Отправка данных ---");
+    DEBUG(SIMBOL_WAR, "[MQTT] Отправка данных ---");
     return ha.sendState([](JsonDocument& doc) {
         doc["temp"] = status.get_temp();
         doc["hum"] = status.get_hum();
@@ -3087,6 +3107,14 @@ class Gluonica {
         }
     }
 
+    void displayOTA() {
+        return;
+        display.fillScreen(GxEPD_WHITE);
+        u8g2Fonts.setFont(big_gluon_font_20);
+
+        drawString(65, 90 + 38 + 54, "OTA UPDATE STARTED", LEFT);
+        displayLogo();
+    }
     // #########################################################################################
     String windDegToDirection(float winddirection) {
         int dir = int((winddirection / 22.5) + 0.5);
@@ -3457,7 +3485,7 @@ class Gluonica {
 
         int8_t _hemisphere = settings.latitude > 0 ? NORTH : SOUTH;  //
 
-        drawMoon(x, y, day_utc, month_utc, year_utc, settings.internet_time == 0 ? _hemisphere : settings.hemisphere);
+        drawMoon(x, y, day_utc, month_utc, year_utc, (settings.internet_time == 0 || settings.internet_time == 3) ? _hemisphere : settings.hemisphere);
     }
     // #########################################################################################
     void drawMoon(int x, int y, int dd, int mm, int yy, int8_t hemisphere) {
@@ -3514,7 +3542,7 @@ class Gluonica {
         b = b & 7;                  /* 0 and 8 are the same phase so modulo 8 for 0 */
 
         int8_t _hemisphere = settings.latitude > 0 ? NORTH : SOUTH;  //
-        if (settings.internet_time != 0) _hemisphere = settings.hemisphere;
+        if (settings.internet_time != 0 && settings.internet_time != 3) _hemisphere = settings.hemisphere;
 
         if (_hemisphere == SOUTH) b = 7 - b;
         if (b == 0) return TXT_MOON_NEW;              // New;              0%  illuminated
@@ -4344,7 +4372,9 @@ void appendDebugToLCD(unsigned long value, bool new_line) {
     //  gluon.appendDebug(buffer, new_line);
     //  if (new_line) gluon.appendDebug("\n", new_line);
 }
-
+void printOta(){
+    gluon.displayOTA();
+}
 const char welcome_message[] PROGMEM = R"rawliteral(
     <div class="hello" >
         <span class="hello-message">
@@ -4820,9 +4850,9 @@ void build(sets::Builder& b) {
             {
                 sets::Row g(b);
 
-                if (b.Time("начало", "", &settings.start_mute)) {
+                if (b.Time("Начало", "", &settings.start_mute)) {
                 }
-                if (b.Time("конец", "", &settings.end_mute)) {
+                if (b.Time("Конец", "", &settings.end_mute)) {
                 }
             }
             String txt_sleep_label_dur = settings.sleep ? "Интервал сна, минут" : "Интервал обновления, минут";
@@ -4835,7 +4865,7 @@ void build(sets::Builder& b) {
     {
         sets::Group gr(b, "ВРЕМЯ");
         {
-            if (b.Select("Источник времени", "Местное - время в указанной для погоды точке. Из интернета - из указанного ntp сервера. Часы - из встроенного модуля", "Местное;Из интернета;Часы", &settings.internet_time)) {
+            if (b.Select("Источник времени", "Местное - синхронизированное с сервером погоды. Из интернета - синхронизированное с ntp сервером. Часы - из встроенного модуля (RTC). Местное (Время получения погоды) - статичное, время получения данных", "Местное;Из интернета;Часы;Местное(время получения погоды)", &settings.internet_time)) {
                 ntp_init();
 
                 // status.refresh_date = true;
@@ -4843,13 +4873,13 @@ void build(sets::Builder& b) {
                 b.reload();
             }
             if (ui.fine_tuning && settings.internet_time == 1)
-                if (b.Input("host", "", AnyPtr(settings.ntp_host, 30))) {
+                if (b.Input("Host", "", AnyPtr(settings.ntp_host, 30))) {
                     status.save_mem(true);
                     b.reload();
                 }
             // установить часовой пояс
             if (settings.internet_time != 0) {
-                if (b.Number("time zone", "Часовой пояс в часах, например 3 - Москва", &settings.timeZone)) {
+                if (b.Number("Time zone", "Часовой пояс в часах, например 3 - Москва", &settings.timeZone)) {
                     NTP.setGMT(settings.timeZone);
                     b.reload();
                 }
@@ -4857,14 +4887,21 @@ void build(sets::Builder& b) {
                 // b.LabelNum("Часовой пояс", "Установленный часовой пояс в часах", NTP.getGMT()/60);
                 b.LabelNum("Часовой пояс", "Часовой пояс выбранной точки в часах, например 3 - Москва", WxConditions[0].Timezone / 3600);
             }
+
             // информер времени
-            if (settings.internet_time == 1 || settings.internet_time == 0) {
-                b.Label("время", "", NTP.timeToString() + " " + NTP.dateToString());
+            if (settings.internet_time == 1) {
+                b.Label("Время", "Время синхронизированное с NTP сервером", NTP.timeToString() + " " + NTP.dateToString());
             }
-            if (settings.internet_time == 2) {
+            else if (settings.internet_time == 0){
+                b.Label("Время", "Время синхронизированное с сервером погоды", NTP.timeToString() + " " + NTP.dateToString());
+            }
+            else if (settings.internet_time == 3) {
+                b.Label("Время", "Время получения погоды",  ConvertUnixTime(WxConditions[0].Dt)); 
+            }
+            else  if (settings.internet_time == 2) {
                 Datime dt = rtc.getTime();
                 uint32_t _unix = dt.getUnix();
-                if (b.DateTime("установить", "", &_unix)) {
+                if (b.DateTime("Установить", "", &_unix)) {
                     rtc.setUnix(_unix);
                     NTP.sync(_unix);
                     b.reload();
@@ -4894,6 +4931,14 @@ void build(sets::Builder& b) {
                             Datime dt = rtc.getTime();
                             uint32_t _unix = dt.getUnix();
                             rtc.setUnix(_unix);
+                            NTP.sync(_unix);
+                            b.reload();
+                        }
+                        break;
+                    case 3:  // местное
+                        if (b.Button("обновить")) {
+                            uint32_t _unix = WxConditions[0].Dt;
+                            NTP.setGMT(0);
                             NTP.sync(_unix);
                             b.reload();
                         }
@@ -4940,7 +4985,7 @@ void build(sets::Builder& b) {
                 b.Label("Данные для погоды", "Погода получается для указанных координат. Можно ввести вручную или искать по названию города. Ввести название или часть названия, нажать - искать. Если город нашелся - нажать получить, и обновить экран.");
                 {
                     sets::Row r(b);
-                    if (b.Input("город", "Имя города отображаемое в строке даты. Также используется для поиска координат. Можно писать кирилицей, иногда нужно между словами писать тире, например \"Санкт-Петербург\". Что нашлось - в логах ", AnyPtr(settings.city_om, 61))) {
+                    if (b.Input("Город", "Имя города отображаемое в строке даты. Также используется для поиска координат. Можно писать кирилицей, иногда нужно между словами писать тире, например \"Санкт-Петербург\". Что нашлось - в логах ", AnyPtr(settings.city_om, 61))) {
                         b.reload();
                     }
 
@@ -4965,10 +5010,10 @@ void build(sets::Builder& b) {
                     settings.city_om[60] = '\0';  // гарантируем завершающий ноль
                     b.reload();
                 }
-                b.Number("широта", "", &settings.latitude);
-                b.Number("долгота", "", &settings.longitude);
+                b.Number("Широта", "", &settings.latitude);
+                b.Number("Долгота", "", &settings.longitude);
 
-                if (settings.internet_time != 0)
+                if (settings.internet_time != 0 && settings.internet_time != 3)
                     if (b.Select("Полушарие", "Для фазы луны", "Северное;Южное", &settings.hemisphere)) b.reload();
             }
         }
@@ -5061,7 +5106,7 @@ void build(sets::Builder& b) {
             // status.refresh_roomEnvironment = true;
         }
         if (settings.mqtt) {
-            if (b.Input("сервер", "", AnyPtr(settings.mqtt_server, sizeof(settings.mqtt_server)))) {
+            if (b.Input("Сервер", "", AnyPtr(settings.mqtt_server, sizeof(settings.mqtt_server)))) {
                 replaceSpaces(settings.mqtt_server, SPACE_TO_DOT);
                 // status.mqtt_connected = false;
                 if (mqtt_init())
@@ -5074,7 +5119,7 @@ void build(sets::Builder& b) {
                 b.reload();
             }
             if (ui.fine_tuning)
-                if (b.Input("логин", "", AnyPtr(settings.mqtt_user, sizeof(settings.mqtt_user)))) {
+                if (b.Input("Логин", "", AnyPtr(settings.mqtt_user, sizeof(settings.mqtt_user)))) {
                     replaceSpaces(settings.mqtt_user, SPACE_TO_UNDERSCORE);
                     if (mqtt_init())
                         ui.notif("MQTT Подключено!");
@@ -5086,7 +5131,7 @@ void build(sets::Builder& b) {
                     b.reload();
                 }
             if (ui.fine_tuning)
-                if (b.Pass("пароль", "", AnyPtr(settings.mqtt_pass, sizeof(settings.mqtt_pass)))) {
+                if (b.Pass("Пароль", "", AnyPtr(settings.mqtt_pass, sizeof(settings.mqtt_pass)))) {
                     replaceSpaces(settings.mqtt_pass, SPACE_TO_NONE);
                     if (mqtt_init())
                         ui.notif("MQTT Подключено!");
@@ -5098,7 +5143,7 @@ void build(sets::Builder& b) {
                     b.reload();
                 }
             {
-                if (b.Number("порт", "", &settings.mqtt_port)) {
+                if (b.Number("Порт", "", &settings.mqtt_port)) {
                     // status.mqtt_connected = false;
                     if (mqtt_init())
                         ui.notif("MQTT Подключено!");
@@ -5111,7 +5156,7 @@ void build(sets::Builder& b) {
                 }
             }
             if (ui.fine_tuning) {
-                if (b.Input("имя клиента", "", AnyPtr(settings.mqtt_client_name, sizeof(settings.mqtt_client_name)))) {
+                if (b.Input("Имя клиента", "", AnyPtr(settings.mqtt_client_name, sizeof(settings.mqtt_client_name)))) {
                     // replaceSpaces(settings.mqtt_client_name, SPACE_TO_UNDERSCORE);
                     //  status.mqtt_connected = false;
                     if (mqtt_init())
@@ -5124,7 +5169,7 @@ void build(sets::Builder& b) {
                 }
             }
             if (ui.fine_tuning) {
-                if (b.Input("подписаться", "Топик на который подписываемся", AnyPtr(settings.mqtt_topic_sub, sizeof(settings.mqtt_topic_sub)))) {
+                if (b.Input("Подписка", "Топик на который подписываемся", AnyPtr(settings.mqtt_topic_sub, sizeof(settings.mqtt_topic_sub)))) {
                     // replaceSpaces(settings.mqtt_topic_sub, SPACE_TO_SLASH);
                     // toLower_Case(settings.mqtt_topic_sub);
                     //  status.mqtt_connected = false;
@@ -5158,7 +5203,7 @@ void build(sets::Builder& b) {
             }
 
             if (ui.fine_tuning) {
-                if (b.Input("отправлять", "Топик для отправки сообщения", AnyPtr(settings.mqtt_topic_pub, sizeof(settings.mqtt_topic_pub)))) {
+                if (b.Input("Отправлять", "Топик для отправки сообщения", AnyPtr(settings.mqtt_topic_pub, sizeof(settings.mqtt_topic_pub)))) {
                     // replaceSpaces(settings.mqtt_topic_pub, SPACE_TO_SLASH);
                     // toLower_Case(settings.mqtt_topic_pub);
                     //  status.mqtt_connected = false;
@@ -5175,7 +5220,7 @@ void build(sets::Builder& b) {
             if (b.Switch(("отправлять данные"), "Отправлять данные с датчиков. Температура, влажность, co2 и т.д.", &settings.send_mqtt)) {
                 b.reload();
             }
-            if (settings.send_mqtt && b.Switch("отправлять после обновления", "Отправлять данные после получения погоды и данных с датчиков", &settings.mqtt_send_after_weather)) {
+            if (settings.send_mqtt && b.Switch("Отправлять после обновления", "Отправлять данные после получения погоды и данных с датчиков", &settings.mqtt_send_after_weather)) {
                 b.reload();
             }
             if (settings.send_mqtt && !settings.mqtt_send_after_weather)
@@ -5367,13 +5412,13 @@ void build(sets::Builder& b) {
 
         {
             b.HTML("", "<span class=\"HR\"></span>");
-            if (b.Number("коэффициент температуры", "", &settings.temp_calibration_coeff)) {
+            if (b.Number("Коэффициент температуры", "", &settings.temp_calibration_coeff)) {
                 b.reload();
             }
-            if (b.Number("коэффициент влажности", "", &settings.hum_calibration_coeff)) {
+            if (b.Number("Коэффициент влажности", "", &settings.hum_calibration_coeff)) {
                 b.reload();
             }
-            if (b.Number("коэффициент co2", "", &settings.co2_calibration_coeff)) {
+            if (b.Number("Коэффициент co2", "", &settings.co2_calibration_coeff)) {
                 b.reload();
             }
         }
@@ -5397,7 +5442,7 @@ void build(sets::Builder& b) {
     {
         {
             sets::Group r(b, "Веб интерфейс и WiFi");
-            if (b.Select("цветовая схема", "", "Black;Gray;White;Red;Orange;Yellow;Green;Mint;Aqua;Blue;Violet;Pink;", &settings.color_theme)) {
+            if (b.Select("Цветовая схема", "", "Black;Gray;White;Red;Orange;Yellow;Green;Mint;Aqua;Blue;Violet;Pink;", &settings.color_theme)) {
                 switch (settings.color_theme) {
                     case 0:
                         sett.config.theme = sets::Colors::Black;
@@ -5616,6 +5661,7 @@ void sett_init() {
         DEBUG(SIMBOL_ERR, "==============================");
         DEBUG(SIMBOL_WAR, "==== OTA  UPDATE  STARTED ====");
         // printOta(223);
+        printOta();
     });
 
     // sett.onUpdateFWProgress([](size_t current, size_t final) {
