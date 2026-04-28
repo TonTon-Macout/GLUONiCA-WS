@@ -59,9 +59,6 @@ Forecast_record_type  WxForecast[max_readings];
 Forecast_record_type  Daily[max_dayly_readings];
 
 // Прототипы
-bool ReceiveOneCallWeather(WiFiClient& client, bool print);
-
-
 String ConvertUnixTime(int unix_time);
 float mm_to_inches(float value_mm);
 float hPa_to_inHg(float value_hPa);
@@ -69,23 +66,29 @@ int JulianDate(int d, int m, int y);
 float SumOfPrecip(float DataArray[], int readings);
 String TitleCase(String text);
 double NormalizedMoonPhase(int d, int m, int y);
-bool DecodeOneCallWeatherFromString(const String& payload, bool print);
 
-// Вспомогательные для Open-Meteo
+bool ReceiveOpenMeteoWeather(WiFiClient& client, bool print);
+bool DecodeOpenMeteoWeatherFromString(const String& payload, bool print);
+
+bool ReceiveMetNoWeather(WiFiClient& client, bool print);
+bool DecodeMetNoWeatherFromStream(Stream& stream, bool print);
+String MetNoSymbolToIcon(const String& symbol_code);
+
 String WMO_to_Icon(int code, bool is_day = true);
 int iso_to_unix(const char* iso);
 
-// #########################################################################################
-bool ReceiveOneCallWeather(WiFiClient& client, bool print) {
-  
+
+//Open-Meteo.com #################################################################################
+bool ReceiveOpenMeteoWeather(WiFiClient& client, bool print) {
+  if(print) DEBUG(SIMBOL_WAR, "[OPEN-METEO][Receive] FreeHeap: ", ESP.getFreeHeap(), " bytes");
 
   client.stop(); // close connection before sending a new request
 
   HTTPClient http;
 
   String uri_hourly = "/v1/forecast?"
-               "latitude=" + String(settings.latitude) +
-               "&longitude=" + String(settings.longitude) +
+               "latitude=" + String(settings.latitude, 5) +
+               "&longitude=" + String(settings.longitude, 5) +
                "&current=temperature_2m,apparent_temperature,dewpoint_2m,relative_humidity_2m,"
                "pressure_msl,cloud_cover,visibility,wind_speed_10m,wind_direction_10m,"
                "precipitation,rain,snowfall,weather_code,uv_index,is_day"
@@ -242,9 +245,8 @@ bool ReceiveOneCallWeather(WiFiClient& client, bool print) {
     
     String payload = http.getString();
 
-    // Для отладки — выводим размер и начало ответа
-    DEBUG(SIMBOL_INFO, "[WEATHER] Payload received, size: ", payload.length(), " bytes");
-
+    DEBUG(SIMBOL_INFO, "[OPEN-METEO.COM] SUCCESS! Payload size: " + String(payload.length()) + " bytes");
+    if(print) DEBUG(SIMBOL_WAR, "[OPEN-METEO][Receive] FreeHeap: ", ESP.getFreeHeap(), " bytes");
 
     // Показываем первые 400 символов (чтобы увидеть, JSON ли это)
    //if (payload.length() > 400) {
@@ -256,7 +258,7 @@ bool ReceiveOneCallWeather(WiFiClient& client, bool print) {
    //}
 
 
-    bool ok = DecodeOneCallWeatherFromString(payload, print);
+    bool ok = DecodeOpenMeteoWeatherFromString(payload, print);
 
     http.end();
     client.stop();
@@ -269,9 +271,8 @@ bool ReceiveOneCallWeather(WiFiClient& client, bool print) {
     return false;
   }
 }
-// #########################################################################################
 
-bool DecodeOneCallWeatherFromString(const String& payload, bool print) {
+bool DecodeOpenMeteoWeatherFromString(const String& payload, bool print) {
   if (print) DEBUG(SIMBOL_WAR, "===== Decoding Data from Open-Meteo ======");
 
   JsonDocument doc;
@@ -280,8 +281,8 @@ bool DecodeOneCallWeatherFromString(const String& payload, bool print) {
 
   if (error) {
     DEBUG(SIMBOL_ERR, "deserializeJson() failed: ", error.c_str());
+    if(print) DEBUG(SIMBOL_WAR, "[OPEN-METEO][Decode] FreeHeap: ", ESP.getFreeHeap(), " bytes");
 
-    // Для отладки: выводим начало и конец строки, если ошибка
     if (payload.length() > 200) {
       DEBUG("Problematic part around beginning:");
       DEBUG(payload.substring(0, 200));
@@ -463,11 +464,11 @@ bool DecodeOneCallWeatherFromString(const String& payload, bool print) {
   if (pressure_trend == 0) WxConditions[0].Trend = "0";
 
 
-
+  if(print) DEBUG(SIMBOL_WAR, "[OPEN-METEO][Decode] FreeHeap: ", ESP.getFreeHeap(), " bytes");
   return true;
 }
 
-bool DecodeOneCallWeatherFromStringHourly(const String& payload, bool print) {
+bool DecodeOpenMeteoWeatherFromStringHourly(const String& payload, bool print) {
   if (print) DEBUG(SIMBOL_WAR, "===== Decoding Data from Open-Meteo ======");
 
   //StaticJsonDocument<8192> doc;  // 12 КБ — 
@@ -635,9 +636,6 @@ bool DecodeOneCallWeatherFromStringHourly(const String& payload, bool print) {
   return true;
 }
 
-
-
-// #########################################################################################
 /* 
 Code	Description
 0	Clear sky
@@ -668,6 +666,596 @@ String WMO_to_Icon(int code, bool is_day) {
 }
 
 
+
+//MET.NO #########################################################################################
+bool ReceiveMetNoWeather(WiFiClient& client, bool print) {
+  client.stop();
+  if(print) DEBUG(SIMBOL_WAR, "[MET.NO][Receive] FreeHeap: ", ESP.getFreeHeap(), " bytes");
+  HTTPClient http;
+
+  String url = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=" 
+               + String(settings.latitude, 4) 
+               + "&lon=" + String(settings.longitude, 4);
+
+  // Можно добавить высоту в метрах?
+  // url += "&altitude=150";
+
+  if (!http.begin(url)) {   
+    DEBUG(SIMBOL_ERR, "[MET.NO] HTTP begin failed");
+    return false;
+  }
+
+  String userAgent = NETWORK_NAME " https://github.com/TonTon-Macout/GLUONiCA-WS";
+  http.setUserAgent(userAgent);
+  http.addHeader("Accept", "application/json");
+
+  if(print) DEBUG(SIMBOL_INFO, "[MET.NO] Url: " + url);
+  if(print) DEBUG(SIMBOL_INFO, "[MET.NO] User-Agent: " + userAgent);
+
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+
+    //String payload = http.getString();
+    //DEBUG(SIMBOL_INFO, "[MET.NO] SUCCESS! Payload size: " + String(payload.length()) + " bytes");
+   // bool ok = DecodeMetNoWeatherFromString(payload, print);
+    bool ok = DecodeMetNoWeatherFromStream(http.getStream(), print);
+    http.end();
+    client.stop();
+    return ok;
+  } 
+  else {
+    DEBUG(SIMBOL_ERR, "[MET.NO] HTTP error: " + http.errorToString(httpCode) + " (code " + String(httpCode) + ")");
+
+    String responseBody = http.getString();
+    if (responseBody.length() > 0) {
+      DEBUG(SIMBOL_WAR, "[MET.NO] Server reply: " + responseBody.substring(0, 600));
+    } else {
+      DEBUG(SIMBOL_WAR, "[MET.NO] Server reply: (empty body)");
+    }
+
+    DEBUG(SIMBOL_WAR, "Ссылка: " + url);
+    DEBUG(SIMBOL_WAR, "User Agent: " + userAgent);
+
+    http.end();
+    client.stop();
+    return false;
+  }
+}
+
+bool DecodeMetNoWeatherFromStream(Stream& stream, bool print) {
+  if (print) DEBUG(SIMBOL_WAR, "===== Decoding Data from MET.NO =====");
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, stream);
+
+  if (error) {
+    DEBUG(SIMBOL_ERR, "deserializeJson failed: ", error.c_str());
+    DEBUG(SIMBOL_WAR, "FreeHeap: ", ESP.getFreeHeap(), " bytes");
+    return false;
+  }
+
+  JsonObject properties = doc["properties"];
+  JsonArray timeseries  = properties["timeseries"];
+
+  if (timeseries.size() == 0) {
+    DEBUG(SIMBOL_ERR, "[MET.NO] No timeseries data");
+    return false;
+  }
+
+  // координаты и высота
+  float lat = doc["geometry"]["coordinates"][1] | settings.latitude;
+  float lon = doc["geometry"]["coordinates"][0] | settings.longitude;
+  float h   = doc["geometry"]["coordinates"][2] | 0.0f;
+
+  const float g = 9.81f;
+  const float R = 287.0f;
+
+  // ==================== CURRENT ====================
+  if (print) DEBUG(SIMBOL_WAR, "=== CURRENT ===");
+
+  JsonObject now = timeseries[0]["data"]["instant"]["details"];
+
+  float tC = now["air_temperature"] | 0.0f;
+  float tK = tC + 273.15f;
+  float p0 = now["air_pressure_at_sea_level"] | 0.0f;
+  float p  = p0 * expf(-(g * h) / (R * tK));
+
+  WxConditions[0].Dt          = iso_to_unix(timeseries[0]["time"]) + settings.timeZone * 3600;
+  WxConditions[0].Timezone    = settings.timeZone * 3600;
+  WxConditions[0].lat         = lat;
+  WxConditions[0].lon         = lon;
+
+  WxConditions[0].Temperature = tC;
+  WxConditions[0].FeelsLike   = tC;
+  WxConditions[0].DewPoint    = now["dew_point_temperature"] | 0.0f;
+  WxConditions[0].Humidity    = now["relative_humidity"] | 0;
+  WxConditions[0].Pressure    = p;
+
+  WxConditions[0].Cloudcover  = now["cloud_area_fraction"] | 0;
+  WxConditions[0].Windspeed   = now["wind_speed"] | 0.0f;
+  WxConditions[0].Winddir     = now["wind_from_direction"] | 0.0f;
+  WxConditions[0].Visibility  = 0; // нет
+  WxConditions[0].UVI         = 0.0f; // нет
+
+  // осадки + тип
+  JsonObject next1h = timeseries[0]["data"]["next_1_hours"];
+
+  if (!next1h.isNull()) {
+    float precip = next1h["details"]["precipitation_amount"] | 0.0f;
+    const char* symbol = next1h["summary"]["symbol_code"] | "";
+
+    WxConditions[0].Precipitation = precip;
+
+    if (strstr(symbol, "snow")) {
+      WxConditions[0].Snowfall = precip;
+      WxConditions[0].Rainfall = 0.0f;
+    } else if (strstr(symbol, "sleet")) {
+      WxConditions[0].Snowfall = precip * 0.5f;
+      WxConditions[0].Rainfall = precip * 0.5f;
+    } else {
+      WxConditions[0].Rainfall = precip;
+      WxConditions[0].Snowfall = 0.0f;
+    }
+
+    WxConditions[0].Icon = MetNoSymbolToIcon(symbol);
+  } else {
+    WxConditions[0].Rainfall = 0;
+    WxConditions[0].Snowfall = 0;
+    WxConditions[0].Precipitation = 0;
+    WxConditions[0].Icon = "04d";
+  }
+
+  //WxConditions[0].IsDay = true;
+  if (print) {
+    DEBUG("Temp: " + String(WxConditions[0].Temperature));
+    DEBUG("Icon: " + WxConditions[0].Icon);
+    DEBUG("Rain (1h): " + String(WxConditions[0].Rainfall));
+    DEBUG("Snow (1h): " + String(WxConditions[0].Snowfall));
+  }
+  // ==================== HOURLY ====================
+  if (print) DEBUG(SIMBOL_WAR, "=== HOURLY ===");
+
+  int h_count = 0;
+
+  for (size_t i = 0; i < timeseries.size() && h_count < max_readings; i++) {
+
+    if (!timeseries[i]["data"].containsKey("next_1_hours")) continue;
+
+    JsonObject details = timeseries[i]["data"]["instant"]["details"];
+    JsonObject next1h  = timeseries[i]["data"]["next_1_hours"];
+
+    float tC = details["air_temperature"] | 0.0f;
+    float tK = tC + 273.15f;
+    float p0 = details["air_pressure_at_sea_level"] | 0.0f;
+    float p  = p0 * expf(-(g * h) / (R * tK));
+
+    WxForecast[h_count].Dt          = iso_to_unix(timeseries[i]["time"]);
+    WxForecast[h_count].Temperature = tC;
+    WxForecast[h_count].FeelsLike   = tC;
+    WxForecast[h_count].Humidity    = details["relative_humidity"] | 0;
+    WxForecast[h_count].Pressure    = p;
+    WxForecast[h_count].Cloudcover  = details["cloud_area_fraction"] | 0;
+    WxForecast[h_count].Windspeed   = details["wind_speed"] | 0.0f;
+    WxForecast[h_count].Winddir     = details["wind_from_direction"] | 0.0f;
+
+    float precip = next1h["details"]["precipitation_amount"] | 0.0f;
+    const char* symbol = next1h["summary"]["symbol_code"] | "";
+
+    WxForecast[h_count].Precipitation = precip;
+
+    if (strstr(symbol, "snow")) {
+      WxForecast[h_count].Snowfall = precip;
+      WxForecast[h_count].Rainfall = 0.0f;
+    } else if (strstr(symbol, "sleet")) {
+      WxForecast[h_count].Snowfall = precip * 0.5f;
+      WxForecast[h_count].Rainfall = precip * 0.5f;
+    } else {
+      WxForecast[h_count].Rainfall = precip;
+      WxForecast[h_count].Snowfall = 0.0f;
+    }
+
+    WxForecast[h_count].Icon = MetNoSymbolToIcon(symbol);
+
+    h_count++;
+  }
+
+  for (int i = h_count; i < max_readings; i++) WxForecast[i].Dt = 0;
+
+  // ==================== DAILY ====================
+  if (print) DEBUG(SIMBOL_WAR, "=== DAILY ===");
+
+int d_count = 0;
+
+float day_high = -100;
+float day_low  = 100;
+float day_rain = 0;
+float day_snow = 0;
+
+String prev_day = "";
+String day_icon = "04d";
+
+for (size_t i = 0; i < timeseries.size() && d_count < 8; i++) {
+
+  String time_str = timeseries[i]["time"].as<const char*>();
+  String day = time_str.substring(0, 10);
+
+  if (day != prev_day && prev_day != "") {
+    Daily[d_count].Dt = iso_to_unix((prev_day + "T12:00:00").c_str());
+    Daily[d_count].High = day_high;
+    Daily[d_count].Low  = day_low;
+
+    Daily[d_count].Rainfall = day_rain;
+    Daily[d_count].Snowfall = day_snow;
+    Daily[d_count].Precipitation = day_rain + day_snow;
+
+    Daily[d_count].Icon = day_icon;
+
+    if (print) {
+      DEBUG("=== DAY " + String(d_count) + " ===");
+    
+      String dateStr = ConvertUnixTime(Daily[d_count].Dt);
+      DEBUG("Date: " + dateStr);
+    
+      DEBUG("High: " + String(Daily[d_count].High));
+      DEBUG("Low : " + String(Daily[d_count].Low));
+    
+      DEBUG("Rain: " + String(Daily[d_count].Rainfall));
+      DEBUG("Snow: " + String(Daily[d_count].Snowfall));
+      DEBUG("Total Precip: " + String(Daily[d_count].Precipitation));
+    
+      DEBUG("Icon: " + Daily[d_count].Icon);
+    
+      DEBUG("--------------------------");
+    }
+
+    d_count++;
+
+    // reset
+    day_high = -100;
+    day_low  = 100;
+    day_rain = 0;
+    day_snow = 0;
+    day_icon = "04d";
+  }
+
+  prev_day = day;
+
+  float t = timeseries[i]["data"]["instant"]["details"]["air_temperature"] | 0.0f;
+
+  if (t > day_high) day_high = t;
+  if (t < day_low)  day_low  = t;
+
+  float precip = 0;
+  String symbol = "";
+
+  if (timeseries[i]["data"].containsKey("next_6_hours")) {
+    precip = timeseries[i]["data"]["next_6_hours"]["details"]["precipitation_amount"] | 0.0f;
+    symbol = timeseries[i]["data"]["next_6_hours"]["summary"]["symbol_code"].as<const char*>();
+  } 
+  else if (timeseries[i]["data"].containsKey("next_1_hours")) {
+    precip = timeseries[i]["data"]["next_1_hours"]["details"]["precipitation_amount"] | 0.0f;
+    symbol = timeseries[i]["data"]["next_1_hours"]["summary"]["symbol_code"].as<const char*>();
+  }
+
+  // разделение rain/snow
+  if (symbol.indexOf("snow") != -1) {
+    day_snow += precip;
+  } else {
+    day_rain += precip;
+  }
+
+  // иконка дня (берём около полудня)
+  if (time_str.indexOf("12:00") != -1 && symbol.length() > 0) {
+    day_icon = MetNoSymbolToIcon(symbol);
+  }
+}
+
+// последний день
+if (prev_day != "" && d_count < 8) {
+  Daily[d_count].Dt = iso_to_unix((prev_day + "T12:00:00").c_str());
+  Daily[d_count].High = day_high;
+  Daily[d_count].Low  = day_low;
+  Daily[d_count].Rainfall = day_rain;
+  Daily[d_count].Snowfall = day_snow;
+  Daily[d_count].Precipitation = day_rain + day_snow;
+  Daily[d_count].Icon = day_icon;
+
+  if (print) {
+    DEBUG("=== DAY " + String(d_count) + " ===");
+
+    String dateStr = ConvertUnixTime(Daily[d_count].Dt);
+    DEBUG("Date: " + dateStr);
+
+    DEBUG("High: " + String(Daily[d_count].High));
+    DEBUG("Low : " + String(Daily[d_count].Low));
+
+    DEBUG("Rain: " + String(Daily[d_count].Rainfall));
+    DEBUG("Snow: " + String(Daily[d_count].Snowfall));
+    DEBUG("Total Precip: " + String(Daily[d_count].Precipitation));
+
+    DEBUG("Icon: " + Daily[d_count].Icon);
+
+    DEBUG("--------------------------");
+ }
+
+  d_count++;
+}
+
+for (int i = d_count; i < 8; i++) Daily[i].Dt = 0;
+
+  if (print) DEBUG(SIMBOL_WAR, "[MET.NO][Decode] Done");
+
+  return true;
+}
+
+String MetNoSymbolToIcon(const String& symbol_code) {
+
+  bool isNight = symbol_code.indexOf("_night") != -1;
+
+  String base = symbol_code;
+  base.replace("_day", "");
+  base.replace("_night", "");
+  base.replace("_polartwilight", "");
+
+  String icon = "04d"; // default
+
+  // порядок важен!
+  if (base.indexOf("thunder") != -1) {
+    icon = "11d";
+  }
+  else if (base.indexOf("snow") != -1) {
+    icon = "13d";
+  }
+  else if (base.indexOf("sleet") != -1) {
+    icon = "13d"; // можно поменять на 10d если хочешь "более дождь"
+  }
+  else if (base.indexOf("showers") != -1) {
+    icon = "09d";
+  }
+  else if (base.indexOf("rain") != -1) {
+    icon = "10d";
+  }
+  else if (base.indexOf("fog") != -1) {
+    icon = "50d";
+  }
+  else if (base.indexOf("clearsky") != -1) {
+    icon = "01d";
+  }
+  else if (base.indexOf("fair") != -1) {
+    icon = "02d";
+  }
+  else if (base.indexOf("partlycloudy") != -1) {
+    icon = "03d";
+  }
+  else if (base.indexOf("cloudy") != -1) {
+    icon = "04d";
+  }
+
+  // заменяем d → n
+  if (isNight) {
+    icon.setCharAt(icon.length() - 1, 'n');
+  }
+
+  return icon;
+}
+
+
+
+bool DecodeMetNoWeatherFromStream3(Stream& stream, bool print) {
+  if (print) DEBUG(SIMBOL_WAR, "===== Decoding Data from MET.NO =====");
+
+  JsonDocument doc;   // ArduinoJson 6/7
+  //DeserializationError error = deserializeJson(doc, payload);
+  DeserializationError error = deserializeJson(doc, stream);
+  if (error) {
+    DEBUG(SIMBOL_ERR, "deserializeJson filed: ", error.c_str());
+    DEBUG(SIMBOL_WAR, "FreeHeap: ", ESP.getFreeHeap(), " bytes");
+    return false;
+  }
+  if(print) DEBUG(SIMBOL_WAR, "[MET.NO][Decode] FreeHeap: ", ESP.getFreeHeap(), " bytes");
+
+  JsonObject properties = doc["properties"];
+  JsonArray timeseries  = properties["timeseries"];
+
+  if (timeseries.size() == 0) {
+    DEBUG(SIMBOL_ERR, "[MET.NO] No timeseries data");
+    return false;
+  }
+
+  if (print) DEBUG(SIMBOL_WAR, "=== CURRENT CONDITIONS ===");
+
+  JsonObject now = timeseries[0]["data"]["instant"]["details"];
+
+  WxConditions[0].Dt          = iso_to_unix(timeseries[0]["time"].as<const char*>()) + settings.timeZone*3600;
+  WxConditions[0].Timezone    = 0;                    // met.no отдаёт в UTC
+  WxConditions[0].lat         = doc["geometry"]["coordinates"][1] | settings.latitude;
+  WxConditions[0].lon         = doc["geometry"]["coordinates"][0] | settings.longitude;
+
+  WxConditions[0].Temperature = now["air_temperature"] | 0.0f;
+ // WxConditions[0].FeelsLike   = now["air_temperature"] | 0.0f;   
+  WxConditions[0].DewPoint    = now["dew_point_temperature"] | 0.0f;
+  WxConditions[0].Humidity    = now["relative_humidity"] | 0;
+
+  float p0 = now["air_pressure_at_sea_level"] | 0.0f;
+  float tC = now["air_temperature"] | 0.0f;
+  float h =  doc["geometry"]["coordinates"][2] | 0.0f;
+  float tK = tC + 273.15f;
+  const float g = 9.81f;
+  const float R = 287.0f;
+  float p = p0 * expf(-(g * h) / (R * tK)); 
+  WxConditions[0].Pressure = p;
+
+  WxConditions[0].Cloudcover  = now["cloud_area_fraction"] | 0;
+  WxConditions[0].Windspeed   = now["wind_speed"] | 0.0f;
+  WxConditions[0].Winddir     = now["wind_from_direction"] | 0.0f;
+  WxConditions[0].UVI         = 0.0f;   // нет в compact
+
+  // Осадки сейчас (из next_1_hours)
+  JsonObject next1h = timeseries[0]["data"]["next_1_hours"];
+  if (!next1h.isNull()) {
+    const char* symbol = next1h["summary"]["symbol_code"] | "";
+    WxConditions[0].Icon = MetNoSymbolToIcon(symbol ? symbol : "");
+
+    float precip = next1h["details"]["precipitation_amount"] | 0.0f;
+    WxConditions[0].Precipitation = precip;
+
+    if (strstr(symbol, "snow")) {
+        WxConditions[0].Snowfall = precip;
+        WxConditions[0].Rainfall = 0.0f;
+    }
+    else if (strstr(symbol, "sleet")) {
+        // мокрый снег  типа половина того половина другого???
+        WxConditions[0].Snowfall = precip * 0.5f;
+        WxConditions[0].Rainfall = precip * 0.5f;
+    }
+    else {
+        WxConditions[0].Rainfall = precip;
+        WxConditions[0].Snowfall = 0.0f;
+    }
+
+
+    
+  } else {
+    WxConditions[0].Rainfall = 0.0f;
+    WxConditions[0].Icon = "04d";
+  }
+
+ // WxConditions[0].IsDay = true;   
+
+  if (print) {
+    DEBUG("Temp: " + String(WxConditions[0].Temperature));
+    DEBUG("Icon: " + WxConditions[0].Icon);
+    DEBUG("Rain (1h): " + String(WxConditions[0].Rainfall));
+  }
+
+  // ==================== HOURLY ====================
+  if (print) DEBUG(SIMBOL_WAR, "=== HOURLY ===");
+
+  int h_count = 0;
+  for (size_t i = 0; i < timeseries.size() && h_count < max_readings; i++) {
+    const char* time_str = timeseries[i]["time"];
+    // Берём только шаги с next_1_hours (почасовые)
+    if (timeseries[i]["data"].containsKey("next_1_hours")) {
+      JsonObject details = timeseries[i]["data"]["instant"]["details"];
+      JsonObject next1h_details = timeseries[i]["data"]["next_1_hours"]["details"];
+
+      WxForecast[h_count].Dt          = iso_to_unix(time_str);
+      WxForecast[h_count].Temperature = details["air_temperature"] | 0.0f;
+      WxForecast[h_count].FeelsLike   = details["air_temperature"] | 0.0f;
+      WxForecast[h_count].Humidity    = details["relative_humidity"] | 0;
+      WxForecast[h_count].Pressure    = details["air_pressure_at_sea_level"] | 0.0f;
+      WxForecast[h_count].Cloudcover  = details["cloud_area_fraction"] | 0;
+      WxForecast[h_count].Windspeed   = details["wind_speed"] | 0.0f;
+      WxForecast[h_count].Winddir     = details["wind_from_direction"] | 0.0f;
+      WxForecast[h_count].Rainfall    = next1h_details["precipitation_amount"] | 0.0f;
+      WxForecast[h_count].Precipitation = WxForecast[h_count].Rainfall;
+
+      const char* symbol = timeseries[i]["data"]["next_1_hours"]["summary"]["symbol_code"];
+      WxForecast[h_count].Icon = MetNoSymbolToIcon(symbol ? symbol : "");
+
+      h_count++;
+    }
+  }
+
+  for (int r = h_count; r < max_readings; r++) WxForecast[r].Dt = 0;
+
+  // ==================== DAILY (max/min + осадки) ====================
+  if (print) DEBUG(SIMBOL_WAR, "=== DAILY (7 дней) ===");
+
+  // Для daily нам нужно агрегировать по дням (мет.no не отдаёт готовые daily)
+  // Простой способ: группируем по календарным дням и ищем max/min + суммируем осадки
+
+  int d_count = 0;
+  float day_high = -100, day_low = 100;
+  float day_precip = 0.0f;
+  String current_day = "";
+  String prev_day = "";
+
+  for (size_t i = 0; i < timeseries.size() && d_count < 8; i++) {
+    const char* time_str = timeseries[i]["time"].as<const char*>();
+    String this_day = String(time_str).substring(0, 10);  // "2026-04-27"
+
+    if (this_day != prev_day && prev_day != "") {
+      // Сохраняем предыдущий день
+      Daily[d_count].Dt          = iso_to_unix((prev_day + "T12:00:00").c_str()); // середина дня
+      Daily[d_count].High        = day_high;
+      Daily[d_count].Low         = day_low;
+      Daily[d_count].Precipitation = day_precip;
+      Daily[d_count].Rainfall    = day_precip;   // мет.no даёт общее precipitation
+      Daily[d_count].Snowfall    = 0.0f;
+
+      // Берём символ из середины дня (примерно 6-12 часов)
+      // Можно улучшить позже
+      Daily[d_count].Icon = "04d"; // заглушка, можно взять из первого next_6_hours дня
+
+      if (print) {
+        DEBUG("Day " + String(d_count) + ": " + prev_day);
+        DEBUG("  High: " + String(day_high) + "  Low: " + String(day_low) + "  Precip: " + String(day_precip));
+      }
+
+      d_count++;
+      day_high = -100; day_low = 100; day_precip = 0.0f;
+    }
+
+    prev_day = this_day;
+
+    // Обновляем max/min и сумму осадков за день
+    float t = timeseries[i]["data"]["instant"]["details"]["air_temperature"] | 0.0f;
+    if (t > day_high) day_high = t;
+    if (t < day_low)  day_low  = t;
+
+    // Суммируем осадки (next_6_hours или next_1_hours)
+    if (timeseries[i]["data"].containsKey("next_6_hours")) {
+      day_precip += timeseries[i]["data"]["next_6_hours"]["details"]["precipitation_amount"] | 0.0f;
+    } else if (timeseries[i]["data"].containsKey("next_1_hours")) {
+      day_precip += timeseries[i]["data"]["next_1_hours"]["details"]["precipitation_amount"] | 0.0f;
+    }
+  }
+
+  // Не забудь последний день
+  if (prev_day != "" && d_count < 8) {
+    Daily[d_count].High = day_high;
+    Daily[d_count].Low  = day_low;
+    Daily[d_count].Precipitation = day_precip;
+    Daily[d_count].Rainfall = day_precip;
+    Daily[d_count].Icon = "04d";
+    d_count++;
+  }
+
+  for (int r = d_count; r < 8; r++) Daily[r].Dt = 0;
+
+  if(print) DEBUG(SIMBOL_WAR, "[MET.NO][Decode] FreeHeap: ", ESP.getFreeHeap(), " bytes");
+  return true;
+}
+//symbol_code met.no → Icon  
+String MetNoSymbolToIcon3(const String& symbol_code) {
+  if (symbol_code.indexOf("clearsky") != -1)      return "01d";
+  if (symbol_code.indexOf("fair") != -1)          return "02d";
+  if (symbol_code.indexOf("partlycloudy") != -1)  return "03d";
+  if (symbol_code.indexOf("cloudy") != -1)        return "04d";
+
+  if (symbol_code.indexOf("rain") != -1)          return "10d";
+  if (symbol_code.indexOf("showers") != -1)       return "09d";
+  if (symbol_code.indexOf("snow") != -1)          return "13d";
+  if (symbol_code.indexOf("sleet") != -1)         return "09d";   // мокрый снег
+  if (symbol_code.indexOf("thunder") != -1)       return "11d";
+
+  if (symbol_code.indexOf("fog") != -1)           return "50d";
+
+  // ночные варианты
+  if (symbol_code.indexOf("_night") != -1) {
+    String dayIcon = MetNoSymbolToIcon(symbol_code.substring(0, symbol_code.indexOf("_night")));
+    dayIcon.setCharAt(dayIcon.length()-1, 'n');
+    return dayIcon;
+  }
+
+  return "04d"; // по умолчанию облачно
+}
+
+
+
+// #########################################################################################
 String IconToEmoji(String icon) {
   if (icon == "01d") return "☀️";   // ясно день
   if (icon == "01n") return "🌙";   // ясно ночь
@@ -708,10 +1296,8 @@ int iso_to_unix(const char* iso) {
   return (int)mktime(&tm);
 }
 
+
 // #########################################################################################
-
-
-
 String ConvertUnixTime(int unix_time) {
   time_t tm = unix_time;
   struct tm *now_tm = gmtime(&tm);
@@ -721,8 +1307,6 @@ String ConvertUnixTime(int unix_time) {
   
   return output;
 }
-
-
 
 // 13:22:33
 String ConvertTime_HMS(time_t unix_time) {

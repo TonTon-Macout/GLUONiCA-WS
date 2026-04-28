@@ -160,7 +160,7 @@ struct __attribute__((packed)) SETTINGS {
     char Timezone[30] = "MSK-3";  // Choose your time zone from: https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv
 
     // WEATHER
-    uint8_t weather = 2;  // погода - 0 нет | 1 - openweathermap | 2 -  open-meteo | 3 - mqtt
+    uint8_t weather = 2;  // погода - 0 нет | 1 - openweathermap | 2 -  open-meteo | 3 - met.no
 
     float latitude = 56.13655;
     float longitude = 40.39658;
@@ -2303,6 +2303,19 @@ class Status {
                 updateSensors();
                 return ok;
             } break;
+            case 3: {
+                bool ok = getMetNoWeather();
+                if (settings.internet_time == 0 || settings.internet_time == 3) {
+                    NTP.end();
+                    uint32_t _unix = WxConditions[0].Dt;
+                    NTP.setGMT(0);
+                    NTP.sync(_unix);
+                }
+
+
+                updateSensors();
+                return ok;
+            } break;
 
             default:
                 break;
@@ -2446,7 +2459,26 @@ class Status {
         WiFiClient client;  // wifi client object
         while (RxWeather == false && Attempts <= 5) {
             DEBUG("[WEATHER] Попытка: " + String(Attempts));
-            if (RxWeather == false) RxWeather = ReceiveOneCallWeather(client, settings.extra_debug);
+            if (RxWeather == false) RxWeather = ReceiveOpenMeteoWeather(client, settings.extra_debug);
+            count();
+            Attempts++;
+        }
+
+        if (RxWeather)
+            ;
+        else
+            DEBUG(SIMBOL_ERR, "[WEATHER] Ошибка получения погоды ----");
+
+        return RxWeather;
+    }
+    bool getMetNoWeather() {
+        DEBUG(SIMBOL_WAR, "[WEATHER] Получаем погоду от MET.NO ---");
+        byte Attempts = 1;
+        bool RxWeather = false;
+        WiFiClient client;  // wifi client object
+        while (RxWeather == false && Attempts <= 5) {
+            DEBUG("[WEATHER] Попытка: " + String(Attempts));
+            if (RxWeather == false) RxWeather = ReceiveMetNoWeather(client, settings.extra_debug);
             count();
             Attempts++;
         }
@@ -2666,7 +2698,7 @@ void ntp_init() {
                 DEBUG(SIMBOL_INFO, "[NTP] Используем время с модуля RTC");
             }
             break;
-        case 3: {  // местное, без хода часов (время получения погоды)
+        case 3: {  // местное, без хода часов (время обновления погоды)
             NTP.end();
             uint32_t _unix = WxConditions[0].Dt;
             NTP.setGMT(0);
@@ -4682,6 +4714,11 @@ class BUILD_UI {
                 DEBUG(SIMBOL_INFO, "Город: ", settings.city_om);
                 DEBUG(SIMBOL_INFO, "Широта: ", settings.latitude);
                 DEBUG(SIMBOL_INFO, "Долгота: ", settings.longitude);
+            } else if (settings.weather == 3) {
+                DEBUG(SIMBOL_INFO, "Поставщик погоды: met.no");
+                DEBUG(SIMBOL_INFO, "Город: ", settings.city_om);
+                DEBUG(SIMBOL_INFO, "Широта: ", settings.latitude);
+                DEBUG(SIMBOL_INFO, "Долгота: ", settings.longitude);
             } else
                 DEBUG(SIMBOL_ERR, "Неизвестный поставщик погоды!");
 
@@ -4962,7 +4999,7 @@ void build(sets::Builder& b) {
         //     b.reload();
         // }
 
-        if (b.Select("Источник", "", "НЕТ;openweathermap.org;open-meteo.com;", &settings.weather)) b.reload();
+        if (b.Select("Источник", "", "НЕТ;openweathermap.org;open-meteo.com;met.no", &settings.weather)) b.reload();
 
         if (settings.weather) {
             if (settings.weather == 1) {
@@ -4982,6 +5019,42 @@ void build(sets::Builder& b) {
             } else if (settings.weather == 2) {
                 // b.Link("Сайт", "", "https://open-meteo.com/");
                 b.HTML("", R"(<a href="https://open-meteo.com/">open-meteo.com</a>)");
+                b.Label("Данные для погоды", "Погода получается для указанных координат. Можно ввести вручную или искать по названию города. Ввести название или часть названия, нажать - искать. Если город нашелся - нажать получить, и обновить экран.");
+                {
+                    sets::Row r(b);
+                    if (b.Input("Город", "Имя города отображаемое в строке даты. Также используется для поиска координат. Можно писать кирилицей, иногда нужно между словами писать тире, например \"Санкт-Петербург\". Что нашлось - в логах ", AnyPtr(settings.city_om, 61))) {
+                        b.reload();
+                    }
+
+                    if (b.Button("искать")) {
+                        bool ok = status.getCityCoordinates(settings.city_om);
+                        if (ok)
+                            ui.notif("Отлично! Город нашелся.");
+                        else
+                            ui.alert("Ошибка получения координат");
+                        b.reload();
+                    }
+                }
+                String city_str = String(settings.last_city_owm[0]) + ";" +
+                                  settings.last_city_owm[1] + ";" +
+                                  settings.last_city_owm[2] + ";" +
+                                  settings.last_city_owm[3] + ";" +
+                                  settings.last_city_owm[4] + ";";
+
+                static uint8_t last_sity;
+                if (b.Select("Города", "Последние найденные города.", city_str, &last_sity)) {
+                    strncpy(settings.city_om, settings.last_city_owm[last_sity], 60);
+                    settings.city_om[60] = '\0';  // гарантируем завершающий ноль
+                    b.reload();
+                }
+                b.Number("Широта", "", &settings.latitude);
+                b.Number("Долгота", "", &settings.longitude);
+
+                if (settings.internet_time != 0 && settings.internet_time != 3)
+                    if (b.Select("Полушарие", "Для фазы луны", "Северное;Южное", &settings.hemisphere)) b.reload();
+            } else if (settings.weather == 3) {
+                // b.Link("Сайт", "", "https://open-meteo.com/");
+                b.HTML("", R"(<a href="https://met.to/">met.to</a>)");
                 b.Label("Данные для погоды", "Погода получается для указанных координат. Можно ввести вручную или искать по названию города. Ввести название или часть названия, нажать - искать. Если город нашелся - нажать получить, и обновить экран.");
                 {
                     sets::Row r(b);
@@ -5052,6 +5125,8 @@ void build(sets::Builder& b) {
                     }
 
                 if (settings.weather == 2) _err = status.om_weather_error_str;
+
+                if (settings.weather == 3) _err = status.om_weather_error_str;
 
                 b.Label("error", "", _err, sets::Colors::Red);
                 b.reload();
@@ -5745,7 +5820,7 @@ void count() {
 
     EVERY_MS(tmr * 1000) {
         DEBUG(SIMBOL_WAR, "=== Пора получить погоду ===");
-        DEBUG(SIMBOL_INFO, status.get_quiet_mode() ? "тихий режим: " : "обычный режим", status.get_quiet_mode() ? String(settings.sleep_duration_quiet_mode * 60) : String(settings.sleep_duration * 60));
+        DEBUG(SIMBOL_INFO, status.get_quiet_mode() ? "тихий режим, интервал: " : "обычный режим, интервал: ", status.get_quiet_mode() ? String(settings.sleep_duration_quiet_mode * 60) : String(settings.sleep_duration * 60), " секунд");
         updt_time();
         status.CheckSensors();
         if (WIFI && status.getWeather())
